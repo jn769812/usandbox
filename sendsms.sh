@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -uo pipefail
 
 if [[ $# -lt 2 ]]; then
   echo "用法: $0 <GATEWAY_TOKEN> \"<消息内容>\""
