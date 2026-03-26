@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
-# 退出 on 错误（除了 grep 没匹配这种）
-set -eo pipefail
+# 不使用严格的 set -e（因为我们需要手动处理失败）
+set -uo pipefail
 
-# 校验传参
+# 参数检查
 if [[ $# -lt 2 ]]; then
   echo "用法: $0 <GATEWAY_TOKEN> \"<消息内容>\""
   exit 1
@@ -21,20 +21,19 @@ RETRY_DELAY=3
 TRY_COUNT=0
 WECHAT_ID=""
 
-until [[ -n "$WECHAT_ID" || $TRY_COUNT -ge $MAX_RETRIES ]]; do
+while [[ -z "$WECHAT_ID" && $TRY_COUNT -lt $MAX_RETRIES ]]; do
   ((TRY_COUNT++))
-  echo "🔁 第 $TRY_COUNT 次尝试获取微信 ID..."
+  echo "🔁 第 $TRY_COUNT 次尝试获取微信会话 ID..."
 
-  # 获取 sessions 输出
+  # 调用 sessions.list，但不要让失败退出整个脚本
   SESSIONS_OUTPUT=$(openclaw gateway call sessions.list \
     --params '{}' \
-    --token "$GATEWAY_TOKEN" \
-    2>/dev/null || true)
+    --token "$GATEWAY_TOKEN" 2>/dev/null)
 
-  # 提取第一个 @im.wechat ID
+  # 提取微信 ID
   WECHAT_ID=$(echo "$SESSIONS_OUTPUT" \
     | grep -oE '[a-zA-Z0-9_-]+@im\.wechat' \
-    | head -n1 || true)
+    | head -n1)
 
   if [[ -z "$WECHAT_ID" ]]; then
     echo "⚠️ 未找到微信 ID，等待 $RETRY_DELAY 秒后重试..."
@@ -43,15 +42,19 @@ until [[ -n "$WECHAT_ID" || $TRY_COUNT -ge $MAX_RETRIES ]]; do
 done
 
 if [[ -z "$WECHAT_ID" ]]; then
-  echo "❌ 获取微信 ID 失败（尝试 $MAX_RETRIES 次）"
+  echo "❌ 获取微信 ID 失败（尝试 $MAX_RETRIES 次）。"
   exit 1
 fi
 
 echo "📍 找到微信会话 ID: $WECHAT_ID"
 echo "📤 正在发送消息..."
 
+# 发送消息（这种命令不会自动退出）
 openclaw message send \
   --target "$WECHAT_ID" \
-  --message "$MESSAGE"
+  --message "$MESSAGE" || {
+    echo "❌ 消息发送失败"
+    exit 1
+  }
 
-echo "🚀 消息发送完成！"
+echo "🚀 消息发送成功！"
